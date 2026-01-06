@@ -1,0 +1,18 @@
+[Unit]
+Description=CSYE6225 Node.js Web Application
+After=network.target
+ConditionalPathExists=/home/csye6225/webapp/.env
+
+[Service]
+Type=simple
+User=csye6225
+Group=csye6225
+WorkingDirectory=/home/csye6225/webapp
+ExecStart=/usr/bin/node /home/csye6225/webapp/app.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+EnvironmentFile=/home/csye6225/webapp/.env
+
+[Install]
+WantedBy=multi-user.target
