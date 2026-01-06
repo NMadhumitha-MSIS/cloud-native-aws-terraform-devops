@@ -1,0 +1,182 @@
+name: Packer Build - Custom Image
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-aws:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Packer
+        run: |
+          curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+          sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+          sudo apt-get update && sudo apt-get install -y packer
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Generate variablesaws.pkrvars.hcl
+        run: |
+          cat <<EOF > variablesaws.pkrvars.hcl
+          aws_region="${{ secrets.AWS_REGION }}"
+          ami_name="${{ secrets.AMI_NAME }}"
+          source_ami_owner="${{ secrets.SOURCE_AMI_OWNER }}"
+          instance_type="${{ secrets.INSTANCE_TYPE }}"
+
+          db_password="${{ secrets.DB_PASSWORD }}"
+          db_username="${{ secrets.DB_USERNAME }}"
+          db_name="${{ secrets.DB_NAME }}"
+          db_host="${{ secrets.DB_HOST }}"
+          project_id="${{ secrets.PROJECT_ID }}"
+          zone="${{ secrets.ZONE }}"
+          source_image_family="${{ secrets.SOURCE_IMAGE_FAMILY }}"
+          machine_type="${{ secrets.MACHINE_TYPE }}"
+          ssh_username="${{ secrets.SSH_USERNAME }}"
+          dev_aws_account_id="${{ secrets.DEV_AWS_ACCOUNT_ID }}"
+          profile="${{ secrets.AWS_PROFILE }}"
+          GH_TOKEN="${{ secrets.GH_TOKEN }}"
+          EOF
+
+      - name: Build AWS AMI
+        run: |
+          packer init packeraws.pkr.hcl
+          packer build --only="amazon-ebs.ubuntu" --var-file="variablesaws.pkrvars.hcl" packeraws.pkr.hcl
+
+      - name: Share AMI with DEMO account
+        run: |
+          AMI_ID=$(aws ec2 describe-images --owners self \
+          --query 'Images[*].[ImageId,CreationDate]' \
+          --output text | sort -k2 -r | head -n1 | awk '{print $1}')
+
+          echo "Fetched AMI_ID: $AMI_ID"
+          echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
+
+          aws ec2 modify-image-attribute \
+          --image-id "$AMI_ID" \
+          --launch-permission "Add=[{UserId=${{ secrets.DEMO_AWS_ACCOUNT_ID }}}]"
+
+          echo "Successfully shared AMI with DEMO account"
+
+      - name: Switch AWS credentials to DEMO
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.DEMO_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Verify shared AMI_ID in DEMO
+        run: |
+          echo "Using shared AMI_ID: ${{ env.AMI_ID }}"
+      
+      - name: Check AMI_ID before updating Launch Template
+        run: |
+          if [ -z "${{ env.AMI_ID }}" ]; then
+          echo "AMI_ID is empty. Something went wrong while sharing the AMI."
+          exit 1
+          fi
+          echo "AMI_ID exists: ${{ env.AMI_ID }}"
+
+      - name: Get Launch Template ID
+        run: |
+          LT_ID=$(aws ec2 describe-launch-templates \
+          --query 'LaunchTemplates[?LaunchTemplateName==`csye6225-lt-demo`].LaunchTemplateId' \
+          --output text)
+          if [ -z "$LT_ID" ]; then echo "Launch template not found" && exit 1; fi
+          echo "Found Launch Template ID: $LT_ID"
+          echo "LT_ID=$LT_ID" >> $GITHUB_ENV
+
+      - name: Update Launch Template Version
+        run: |
+          echo "Updating Launch Template using:"
+          echo " - LT_ID: ${{ env.LT_ID }}"
+          echo " - AMI_ID: ${{ env.AMI_ID }}"
+          aws ec2 create-launch-template-version \
+          --launch-template-id "${{ env.LT_ID }}" \
+          --source-version 1 \
+          --version-description "Updated by CI/CD" \
+          --launch-template-data "{\"ImageId\":\"${{ env.AMI_ID }}\"}"
+          echo "Created new launch template version"
+
+      - name: Refresh Auto Scaling Group
+        run: |
+          ASG_NAME="csye6225-asg-demo"
+          echo "Starting instance refresh for ASG: $ASG_NAME"
+
+          REFRESH_ID=$(aws autoscaling start-instance-refresh \
+          --auto-scaling-group-name "$ASG_NAME" \
+          --preferences '{"MinHealthyPercentage": 100, "InstanceWarmup": 300}' \
+          --query 'InstanceRefreshId' --output text)
+
+          echo "Refresh ID: $REFRESH_ID"
+
+          for i in {1..60}; do
+            STATUS=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --query "InstanceRefreshes[?InstanceRefreshId=='$REFRESH_ID'].Status" \
+              --output text)
+            echo "Refresh status: $STATUS"
+            if [[ "$STATUS" == "Successful" ]]; then break; fi
+            sleep 30
+          done
+
+          if [[ "$STATUS" != "Successful" ]]; then
+            echo "Instance refresh failed. Status: $STATUS"
+            exit 1
+          fi
+
+  # build-gcp:
+  #   runs-on: ubuntu-latest
+  #   needs: build-aws
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v3
+
+  #     - name: Install Packer
+  #       run: |
+  #         curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+  #         sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+  #         sudo apt-get update && sudo apt-get install -y packer
+
+  #     - name: Set up Google Cloud SDK
+  #       - uses: google-github-actions/setup-gcloud@v2
+  #       with:
+  #         project_id: ${{ secrets.PROJECT_ID }}
+  #         service_account_key: ${{ secrets.GCP_SA_KEY }}
+  #         export_default_credentials: true
+
+  #     - name: Generate variables.pkrvars.hcl
+  #       run: |
+  #         cat <<EOF > variables.pkrvars.hcl
+  #         aws_region="${{ secrets.AWS_REGION }}"
+  #         ami_name="${{ secrets.AMI_NAME }}"
+  #         source_ami_owner="${{ secrets.SOURCE_AMI_OWNER }}"
+  #         source_ami="${{ secrets.SOURCE_AMI }}"
+  #         instance_type="${{ secrets.INSTANCE_TYPE }}"
+
+  #         db_password="${{ secrets.DB_PASSWORD }}"
+  #         db_username="${{ secrets.DB_USERNAME }}"
+  #         db_name="${{ secrets.DB_NAME }}"
+  #         db_host="${{ secrets.DB_HOST }}"
+  #         project_id="${{ secrets.PROJECT_ID }}"
+  #         zone="${{ secrets.ZONE }}"
+  #         source_image_family="${{ secrets.SOURCE_IMAGE_FAMILY }}"
+  #         machine_type="${{ secrets.MACHINE_TYPE }}"
+  #         ssh_username="${{ secrets.SSH_USERNAME }}"
+  #         dev_aws_account_id="${{ secrets.DEV_AWS_ACCOUNT_ID }}"
+  #         profile="${{ secrets.AWS_PROFILE }}"
+  #         EOF
+
+  #     - name: Build GCP Image
+  #       run: |
+  #         packer init packergcp.pkr.hcl
+  #         packer build --only="googlecompute.ubuntu" --var-file="variables.pkrvars.hcl" packergcp.pkr.hcl
+
