@@ -1,7 +1,7 @@
 # Cloud-Native Web Application (AWS + Terraform + DevOps)
 
 ## Overview
-Built and deployed a production-grade Node.js web application on AWS using Infrastructure as Code (Terraform) and an automated CI/CD pipeline (GitHub Actions). The setup supports scalability, security best practices, and observability.
+Built and deployed a production grade Node.js web application on AWS using Infrastructure as Code (Terraform) and an automated CI/CD pipeline (GitHub Actions). The setup supports scalability, security best practices, and observability.
 
 ## What I Built
 - Provisioned AWS infrastructure with Terraform (20+ resources)
@@ -32,7 +32,7 @@ Secrets/Keys → Secrets Manager + KMS
 - Infrastructure as Code (Terraform)
 - CI/CD workflow (GitHub Actions)
 - Packer template for AMI creation
-- Deployment-ready Node.js app
+- Deployment ready Node.js app
 
 ## Project Status
 - Code: In progress / to be uploaded
