@@ -1,17 +1,22 @@
 # Cloud-Native Web Application (AWS + Terraform + DevOps)
 
 ## Overview
-Built and deployed a production grade Node.js web application on AWS using Infrastructure as Code (Terraform) and an automated CI/CD pipeline (GitHub Actions). The setup supports scalability, security best practices, and observability.
+This project deploys a production-grade Node.js web application on AWS using Terraform (Infrastructure as Code), Packer-built AMIs, and CI/CD with GitHub Actions. It’s designed to demonstrate scalable, secure, observable cloud deployment patterns.
 
-## What I Built
-- Provisioned AWS infrastructure with Terraform (20+ resources)
-- Deployed a Node.js web application behind a Load Balancer (ALB)
-- Automated CI/CD with GitHub Actions
-- Built custom AMIs using Packer
-- Implemented monitoring/observability using CloudWatch
-- Secured credentials and encryption using AWS KMS and Secrets Manager
-- Configured HTTPS using ACM and DNS routing using Route 53
-- Designed for high availability with Auto Scaling
+## Why there are “two orgs”
+This work was intentionally split into two parts to simulate real-world engineering:
+- **Application Team (Org 1):** owns the Node.js application and app CI
+- **Platform/Infra Team (Org 2):** owns Terraform infrastructure and deployment automation
+
+For portfolio clarity, both parts are organized into a single, recruiter-friendly repository structure.
+
+## Repository Structure
+- `app/` — Node.js application source code
+- `infra/` — Terraform AWS infrastructure (VPC, ALB, ASG, RDS, S3, Route 53, ACM, CloudWatch, KMS/Secrets)
+- `packer/` — Packer templates + provisioning scripts for AMI creation
+- `.github/workflows/` — CI/CD workflows (Terraform validate/plan, app CI, Packer validate/build)
+- `docs/` — architecture notes, runbook steps (to be expanded)
+- `assets/` — diagrams/screenshots (to be added)
 
 ## Tech Stack
 - **Cloud:** AWS (EC2, RDS, S3, ALB, Route 53, CloudWatch, KMS, ACM, Secrets Manager)
@@ -21,24 +26,37 @@ Built and deployed a production grade Node.js web application on AWS using Infra
 - **Image Build:** Packer
 - **OS/Scripting:** Linux, Bash
 
-## Architecture (High Level)
+## High-Level Architecture
 User → Route 53 → ALB (HTTPS/ACM) → Auto Scaling Group (EC2 running Node.js)  
 Data → RDS  
-Static/Artifacts → S3  
+Artifacts/Static → S3  
 Monitoring/Logs → CloudWatch  
 Secrets/Keys → Secrets Manager + KMS
 
-## Project Deliverables
-- Infrastructure as Code (Terraform)
-- CI/CD workflow (GitHub Actions)
-- Packer template for AMI creation
-- Deployment ready Node.js app
+## How to Run Locally (App)
+```bash
+cd app
+npm install
+npm start
 
-## Project Status
-- Code: In progress / to be uploaded
-- Documentation: In progress
+## Infrastructure (Terraform)
+Note: Do NOT commit .tfstate or .terraform/ files.
+
+cd infra
+terraform init
+terraform validate
+terraform plan
+# terraform apply
+
+## CI/CD
+
+Workflows are available under .github/workflows/ for:
+- Terraform validation/plan
+- App CI checks
+- Packer validation/build
 
 ## Next Improvements
-- Add diagram + screenshots in `/assets`
-- Add runbook steps in `/docs`
-- Add cost estimation and guardrails (budgets/alerts)
+- Add architecture diagram in assets/
+- Add step-by-step deployment runbook in docs/
+- Add sanitized example config files (*.example)
+- Add screenshots of CloudWatch dashboards/logs
